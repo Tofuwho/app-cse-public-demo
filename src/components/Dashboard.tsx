@@ -4,17 +4,15 @@ import {
   ArrowRight,
   CheckCircle2,
   ClipboardList,
-  DollarSign,
-  FileSpreadsheet,
   FileUp,
   Package,
   Printer,
   Shield,
-  ShoppingCart,
-  TrendingUp,
+  Wallet,
 } from 'lucide-react';
 import { calcPoSubtotal, calcPpmpTotal, calcPrTotal, useDemo } from '../context/DemoContext';
-import { formatCompactCurrency, formatCurrency, formatNumber } from '../utils/formatters';
+import { ModuleKey } from '../types/procurement';
+import { formatCompactCurrency, formatCurrency } from '../utils/formatters';
 import { StatusBadge } from './RbacBadge';
 
 export const Dashboard: React.FC = () => {
@@ -24,483 +22,332 @@ export const Dashboard: React.FC = () => {
     setActivePage,
     agencyBudgetTotals,
     departmentSummaries,
-    quarterlyPpmpTotals,
   } = useDemo();
 
   const fy = state.activeFiscalYear;
   const lowStockItems = state.inventory.filter((i) => i.stockOnHand <= i.reorderLevel);
-  const outOfStockItems = state.inventory.filter((i) => i.stockOnHand === 0);
 
-  const pendingPpmpCount = state.ppmps.filter(
-    (p) => p.fiscalYear === fy && ['Submitted', 'Budget Verified'].includes(p.status)
-  ).length;
-  const pendingSrCount = state.srs.filter(
-    (s) => s.fiscalYear === fy && ['Submitted', 'Needs Purchase (PR)'].includes(s.status)
-  ).length;
-  const pendingPrCount = state.prs.filter(
-    (p) => p.fiscalYear === fy && ['Submitted', 'Funds Certified', 'Approved'].includes(p.status)
-  ).length;
-  const inTransitPoCount = state.pos.filter(
-    (p) => p.fiscalYear === fy && p.status === 'Approved & Issued'
-  ).length;
-
-  const qMax = Math.max(
-    quarterlyPpmpTotals.q1,
-    quarterlyPpmpTotals.q2,
-    quarterlyPpmpTotals.q3,
-    quarterlyPpmpTotals.q4,
-    1
+  const openPpmps = state.ppmps.filter((p) => p.fiscalYear === fy && p.status !== 'Approved');
+  const openSrs = state.srs.filter(
+    (s) => s.fiscalYear === fy && !['Approved & Issued', 'Cancelled'].includes(s.status)
+  );
+  const openPrs = state.prs.filter(
+    (p) => p.fiscalYear === fy && !['Converted to PO', 'Returned'].includes(p.status)
+  );
+  const openPos = state.pos.filter(
+    (p) => p.fiscalYear === fy && ['Draft', 'Approved & Issued'].includes(p.status)
   );
 
-  const cseTotal = state.ppmps
-    .filter((p) => p.fiscalYear === fy && p.status !== 'Returned')
-    .flatMap((p) => p.items)
-    .filter((i) => i.isCse)
-    .reduce((s, i) => s + (i.q1Qty + i.q2Qty + i.q3Qty + i.q4Qty) * i.unitCost, 0);
+  const totalOpenTasks = openPpmps.length + openSrs.length + openPrs.length + openPos.length;
 
-  const nonCseTotal = Math.max(0, agencyBudgetTotals.totalPpmpPlanned - cseTotal);
+  const procurementSteps: Array<{
+    step: string;
+    title: string;
+    caption: string;
+    page: ModuleKey;
+    badge?: string;
+  }> = [
+    {
+      step: '1',
+      title: 'Plan (PPMP)',
+      caption: 'Quarterly needs',
+      page: 'ppmp',
+      badge: openPpmps.length > 0 ? `${openPpmps.length} open` : undefined,
+    },
+    {
+      step: '2',
+      title: 'Check Stock',
+      caption: 'Warehouse levels',
+      page: 'inventory',
+      badge: lowStockItems.length > 0 ? `${lowStockItems.length} low` : undefined,
+    },
+    {
+      step: '3',
+      title: 'Stock Request',
+      caption: 'Issue or escalate',
+      page: 'sr',
+      badge: openSrs.length > 0 ? `${openSrs.length} open` : undefined,
+    },
+    {
+      step: '4',
+      title: 'Purchase Request',
+      caption: 'Certify & approve',
+      page: 'pr',
+      badge: openPrs.length > 0 ? `${openPrs.length} open` : undefined,
+    },
+    {
+      step: '5',
+      title: 'Order & Receive',
+      caption: 'PO & stock-in',
+      page: 'po',
+      badge: openPos.length > 0 ? `${openPos.length} open` : undefined,
+    },
+  ];
+
+  // Unified concise "Needs Attention" feed (capped at 5 clean rows)
+  const attentionItems: Array<{
+    id: string;
+    docNo: string;
+    title: string;
+    subtitle: string;
+    status: string;
+    page: ModuleKey;
+  }> = [
+    ...openSrs.slice(0, 2).map((s) => ({
+      id: s.id,
+      docNo: s.srNo,
+      title: s.purpose,
+      subtitle: `Stock Request · ${s.departmentId} · ${s.items.length} item(s)`,
+      status: s.status,
+      page: 'sr' as ModuleKey,
+    })),
+    ...openPrs.slice(0, 2).map((pr) => ({
+      id: pr.id,
+      docNo: pr.prNo,
+      title: pr.purpose,
+      subtitle: `Purchase Request · ${formatCurrency(calcPrTotal(pr), state.currency)}`,
+      status: pr.status,
+      page: 'pr' as ModuleKey,
+    })),
+    ...openPos.slice(0, 2).map((po) => ({
+      id: po.id,
+      docNo: po.poNo,
+      title: po.supplierName,
+      subtitle: `Purchase Order · ${formatCurrency(calcPoSubtotal(po), state.currency)}`,
+      status: po.status,
+      page: 'po' as ModuleKey,
+    })),
+    ...openPpmps.slice(0, 2).map((p) => ({
+      id: p.id,
+      docNo: p.ppmpNo,
+      title: p.title,
+      subtitle: `PPMP Plan · ${formatCurrency(calcPpmpTotal(p.items), state.currency)}`,
+      status: p.status,
+      page: 'ppmp' as ModuleKey,
+    })),
+  ].slice(0, 5);
 
   return (
     <div className="space-y-6">
-      {/* Role Focus Banner */}
-      <div className="rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white p-6 shadow-md">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-300">
-              <Shield className="w-3.5 h-3.5" />
-              Active RBAC Persona · {activeRoleDef.name}
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight">
-              Welcome, {activeRoleDef.personaName}
-            </h2>
-            <p className="text-sm text-slate-300 max-w-2xl">{activeRoleDef.description}</p>
+      {/* Calm Welcome Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="space-y-1">
+          <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-full">
+            <Shield className="w-3 h-3" />
+            Signed in as {activeRoleDef.name}
           </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => setActivePage('upload')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white shadow-sm transition"
-            >
-              <FileUp className="w-4 h-4" />
-              Upload & Extract File
-            </button>
-            <button
-              onClick={() => setActivePage('print')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white border border-white/15 transition"
-            >
-              <Printer className="w-4 h-4" />
-              Form & Print Studio
-            </button>
-            <button
-              onClick={() => setActivePage('rbac')}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white border border-white/15 transition"
-            >
-              <Shield className="w-4 h-4" />
-              RBAC Matrix
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>FY {fy} Agency Ceiling</span>
-            <DollarSign className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
-            {formatCompactCurrency(agencyBudgetTotals.agencyCeiling, state.currency)}
-          </div>
-          <p className="mt-1 text-xs text-slate-500 tabular-nums">
-            Allocated: {formatCurrency(agencyBudgetTotals.totalAllocated, state.currency)}
+          <h1 className="text-xl font-bold text-slate-900 pt-1">
+            Hello, {activeRoleDef.personaName}
+          </h1>
+          <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+            {activeRoleDef.description} Follow the 5 steps below or pick up an open task.
           </p>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Remaining Free Budget</span>
-            <TrendingUp className="w-4 h-4 text-emerald-600" />
+        <div className="flex flex-wrap gap-2 shrink-0">
+          <button
+            onClick={() => setActivePage('upload')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition"
+          >
+            <FileUp className="w-4 h-4 text-slate-500" /> Import Spreadsheet
+          </button>
+          <button
+            onClick={() => setActivePage('print')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-white transition"
+          >
+            <Printer className="w-4 h-4" /> Print Forms
+          </button>
+        </div>
+      </div>
+
+      {/* Guided 5-Step Flow Strip */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            How Procurement Flows Here (Click Any Step)
+          </h2>
+          <button
+            onClick={() => setActivePage('app_cse')}
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
+          >
+            View Consolidated APP-CSE <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {procurementSteps.map((s) => (
+            <button
+              key={s.step}
+              onClick={() => setActivePage(s.page)}
+              className="group text-left p-3.5 rounded-xl border border-slate-200/90 hover:border-blue-300 hover:bg-blue-50/40 transition flex flex-col justify-between gap-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="w-6 h-6 rounded-full bg-slate-100 group-hover:bg-blue-600 group-hover:text-white text-slate-700 text-xs font-bold inline-flex items-center justify-center transition">
+                  {s.step}
+                </span>
+                {s.badge && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    {s.badge}
+                  </span>
+                )}
+              </div>
+              <div>
+                <div className="text-xs font-bold text-slate-900">{s.title}</div>
+                <div className="text-[11px] text-slate-500">{s.caption}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 3 Calm Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <button
+          onClick={() => setActivePage('fiscal')}
+          className="text-left bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-300 transition"
+        >
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Remaining Free Budget (FY {fy})</span>
+            <Wallet className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-700 tabular-nums">
+          <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
             {formatCompactCurrency(agencyBudgetTotals.totalRemaining, state.currency)}
           </div>
-          <p className="mt-1 text-xs text-slate-500 tabular-nums">
-            Obligated + Utilized:{' '}
-            {formatCompactCurrency(
-              agencyBudgetTotals.totalObligated + agencyBudgetTotals.totalUtilized,
-              state.currency
-            )}
-          </p>
-        </div>
+          <div className="mt-1 text-xs text-slate-400 tabular-nums">
+            Out of {formatCompactCurrency(agencyBudgetTotals.agencyCeiling, state.currency)} ceiling
+          </div>
+        </button>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Active Procurement Queue</span>
-            <ShoppingCart className="w-4 h-4 text-indigo-600" />
+        <button
+          onClick={() => setActivePage('pr')}
+          className="text-left bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-300 transition"
+        >
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Open Documents Waiting</span>
+            <ClipboardList className="w-4 h-4 text-blue-600" />
           </div>
           <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
-            {pendingPpmpCount + pendingSrCount + pendingPrCount + inTransitPoCount} Open
+            {totalOpenTasks} Items
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            {pendingPpmpCount} PPMP · {pendingSrCount} SR · {pendingPrCount} PR · {inTransitPoCount} PO
-          </p>
-        </div>
+          <div className="mt-1 text-xs text-slate-400">
+            {openPpmps.length} PPMP · {openSrs.length} SR · {openPrs.length} PR · {openPos.length} PO
+          </div>
+        </button>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase">
-            <span>Inventory Health</span>
-            <Package
-              className={`w-4 h-4 ${
-                outOfStockItems.length > 0 ? 'text-rose-600' : 'text-amber-600'
-              }`}
-            />
+        <button
+          onClick={() => setActivePage('inventory')}
+          className="text-left bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-300 transition"
+        >
+          <div className="flex items-center justify-between text-xs font-medium text-slate-500">
+            <span>Low Stock Warnings</span>
+            <Package className="w-4 h-4 text-amber-600" />
           </div>
           <div className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">
-            {lowStockItems.length} Alerts
+            {lowStockItems.length} SKUs
           </div>
-          <p className="mt-1 text-xs text-slate-500">
-            {outOfStockItems.length} out of stock · {state.inventory.length} active SKUs
-          </p>
-        </div>
+          <div className="mt-1 text-xs text-slate-400">
+            {lowStockItems.length === 0
+              ? 'All warehouse items healthy'
+              : 'Click to inspect & reorder'}
+          </div>
+        </button>
       </div>
 
-      {/* Main Analytics Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Departmental Budget Utilization */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+      {/* 2-Column Clean Workspace */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Needs Attention Queue */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Department Budget Allocation & Utilization (FY {fy})
-              </h3>
-              <p className="text-xs text-slate-500">
-                Live calculation of Allocated Ceiling vs. PPMP Plans, Obligated PRs/POs, and Delivered Spend.
-              </p>
+            <h2 className="text-sm font-bold text-slate-900">Needs Attention Now</h2>
+            <span className="text-[11px] text-slate-400">Click an item to act</span>
+          </div>
+
+          {attentionItems.length === 0 ? (
+            <div className="rounded-xl bg-emerald-50/70 border border-emerald-200 p-4 flex items-center gap-2.5 text-xs text-emerald-800">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              All caught up! No pending requests or orders right now.
             </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {attentionItems.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => setActivePage(item.page)}
+                  className="w-full py-3 px-2 -mx-2 rounded-xl hover:bg-slate-50 transition flex items-center justify-between gap-3 text-left"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] font-bold text-blue-700">
+                        {item.docNo}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-900 truncate">
+                        {item.title}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">{item.subtitle}</div>
+                  </div>
+                  <StatusBadge status={item.status} />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {lowStockItems.length > 0 && (
+            <button
+              onClick={() => setActivePage('inventory')}
+              className="mt-4 w-full px-3.5 py-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 hover:bg-amber-50 flex items-center justify-between text-xs text-amber-900 transition"
+            >
+              <span className="inline-flex items-center gap-2 font-medium">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                {lowStockItems.length} item(s) below reorder threshold ({lowStockItems[0]?.name}...)
+              </span>
+              <span className="font-semibold">View Stock →</span>
+            </button>
+          )}
+        </div>
+
+        {/* Clean Department Budgets */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-slate-900">Department Budgets (FY {fy})</h2>
             <button
               onClick={() => setActivePage('fiscal')}
               className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
             >
-              Manage Allocations <ArrowRight className="w-3.5 h-3.5" />
+              Budget Details <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
           <div className="space-y-4">
             {departmentSummaries.map((d) => {
-              const committed = d.obligated + d.utilized;
-              const pct = d.totalAllocated > 0 ? Math.min(100, Math.round((committed / d.totalAllocated) * 100)) : 0;
-              const overBudget = d.remaining < 0;
+              const spent = d.obligated + d.utilized;
+              const pct =
+                d.totalAllocated > 0
+                  ? Math.min(100, Math.round((spent / d.totalAllocated) * 100))
+                  : 0;
+              const over = d.remaining < 0;
               return (
                 <div key={d.department.id} className="space-y-1.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div>
-                      <span className="font-semibold text-slate-900">{d.department.name}</span>{' '}
-                      <span className="font-mono text-[11px] text-slate-400">({d.department.code})</span>
-                    </div>
-                    <div className="tabular-nums text-right">
-                      <span className="font-semibold text-slate-800">
-                        {formatCurrency(committed, state.currency)}
-                      </span>{' '}
-                      <span className="text-slate-400">/</span>{' '}
-                      <span className="text-slate-600">
-                        {formatCurrency(d.totalAllocated, state.currency)}
-                      </span>{' '}
-                      <span
-                        className={`ml-1.5 font-semibold ${
-                          overBudget ? 'text-rose-600' : 'text-emerald-600'
-                        }`}
-                      >
-                        ({pct}%)
-                      </span>
-                    </div>
-                  </div>
-                  <div className="h-2.5 w-full rounded-full bg-slate-100 overflow-hidden flex">
-                    <div
-                      className="h-full bg-emerald-600"
-                      style={{
-                        width: `${
-                          d.totalAllocated > 0
-                            ? Math.min(100, (d.utilized / d.totalAllocated) * 100)
-                            : 0
-                        }%`,
-                      }}
-                      title={`Utilized: ${formatCurrency(d.utilized, state.currency)}`}
-                    />
-                    <div
-                      className={`h-full ${overBudget ? 'bg-rose-500' : 'bg-blue-500'}`}
-                      style={{
-                        width: `${
-                          d.totalAllocated > 0
-                            ? Math.min(100, (d.obligated / d.totalAllocated) * 100)
-                            : 0
-                        }%`,
-                      }}
-                      title={`Obligated: ${formatCurrency(d.obligated, state.currency)}`}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 tabular-nums">
-                    <span>PPMP Planned: {formatCurrency(d.ppmpPlanned, state.currency)}</span>
-                    <span>
-                      Remaining:{' '}
-                      <strong className={overBudget ? 'text-rose-600' : 'text-slate-700'}>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{d.department.name}</span>
+                    <span className="tabular-nums text-slate-600">
+                      <strong className={over ? 'text-rose-600' : 'text-slate-900'}>
                         {formatCurrency(d.remaining, state.currency)}
-                      </strong>
+                      </strong>{' '}
+                      <span className="text-slate-400">left ({pct}% used)</span>
                     </span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        over ? 'bg-rose-500' : pct > 80 ? 'bg-amber-500' : 'bg-blue-600'
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
                 </div>
               );
             })}
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-600" /> Delivered / Utilized
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-blue-500" /> Obligated (Active PR & PO)
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm bg-slate-200" /> Free Balance
-            </span>
-          </div>
-        </div>
-
-        {/* Quarterly APP-CSE Cash Schedule + CSE Split */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Quarterly PPMP Cash Plan</h3>
-                <p className="text-xs text-slate-500">Aggregated Q1–Q4 requirements</p>
-              </div>
-              <button
-                onClick={() => setActivePage('app_cse')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-              >
-                APP-CSE →
-              </button>
-            </div>
-
-            <div className="grid grid-cols-4 gap-3 items-end h-44 pt-4 pb-2 px-2 bg-slate-50 rounded-xl border border-slate-100">
-              {[
-                { label: 'Q1', val: quarterlyPpmpTotals.q1, color: 'bg-blue-600' },
-                { label: 'Q2', val: quarterlyPpmpTotals.q2, color: 'bg-indigo-600' },
-                { label: 'Q3', val: quarterlyPpmpTotals.q3, color: 'bg-sky-600' },
-                { label: 'Q4', val: quarterlyPpmpTotals.q4, color: 'bg-teal-600' },
-              ].map((q) => {
-                const heightPct = Math.max(8, Math.round((q.val / qMax) * 100));
-                return (
-                  <div key={q.label} className="flex flex-col items-center h-full justify-end">
-                    <span className="text-[10px] font-bold text-slate-700 tabular-nums mb-1">
-                      {formatCompactCurrency(q.val, state.currency)}
-                    </span>
-                    <div className="w-full max-w-[38px] bg-slate-200/70 rounded-t-md flex items-end h-28 overflow-hidden">
-                      <div
-                        className={`w-full ${q.color} rounded-t-md transition-all duration-300`}
-                        style={{ height: `${heightPct}%` }}
-                      />
-                    </div>
-                    <span className="text-xs font-bold text-slate-600 mt-1.5">{q.label}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600 font-medium">Common-Use Supplies (PS-DBM CSE)</span>
-              <span className="font-bold text-slate-900 tabular-nums">
-                {formatCurrency(cseTotal, state.currency)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-600 font-medium">Non-CSE Equipment & Goods</span>
-              <span className="font-bold text-slate-900 tabular-nums">
-                {formatCurrency(nonCseTotal, state.currency)}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Action Queues & Alerts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Workflow Queue */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-blue-600" />
-              Active Pipeline & Action Items
-            </h3>
-            <span className="text-[11px] text-slate-500">Click any row to open module</span>
-          </div>
-
-          <div className="divide-y divide-slate-100 text-xs">
-            {state.ppmps
-              .filter((p) => p.fiscalYear === fy && p.status !== 'Approved')
-              .slice(0, 2)
-              .map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setActivePage('ppmp')}
-                  className="w-full py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 px-2 rounded-lg transition"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      {p.ppmpNo} · <span className="text-slate-600 font-normal">{p.title}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      PPMP Value: {formatCurrency(calcPpmpTotal(p.items), state.currency)}
-                    </div>
-                  </div>
-                  <StatusBadge status={p.status} />
-                </button>
-              ))}
-
-            {state.srs
-              .filter((s) => s.fiscalYear === fy && s.status !== 'Approved & Issued')
-              .slice(0, 2)
-              .map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => setActivePage('sr')}
-                  className="w-full py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 px-2 rounded-lg transition"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      {s.srNo} · <span className="text-slate-600 font-normal">{s.purpose}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500">
-                      {s.items.length} requested item(s) · Dept: {s.departmentId}
-                    </div>
-                  </div>
-                  <StatusBadge status={s.status} />
-                </button>
-              ))}
-
-            {state.prs
-              .filter((pr) => pr.fiscalYear === fy && pr.status !== 'Converted to PO')
-              .slice(0, 3)
-              .map((pr) => (
-                <button
-                  key={pr.id}
-                  onClick={() => setActivePage('pr')}
-                  className="w-full py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 px-2 rounded-lg transition"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      {pr.prNo} · <span className="text-slate-600 font-normal">{pr.purpose}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 tabular-nums">
-                      ABC: {formatCurrency(calcPrTotal(pr), state.currency)}
-                    </div>
-                  </div>
-                  <StatusBadge status={pr.status} />
-                </button>
-              ))}
-
-            {state.pos
-              .filter((po) => po.fiscalYear === fy && po.status === 'Approved & Issued')
-              .slice(0, 2)
-              .map((po) => (
-                <button
-                  key={po.id}
-                  onClick={() => setActivePage('po')}
-                  className="w-full py-2.5 flex items-center justify-between gap-2 text-left hover:bg-slate-50 px-2 rounded-lg transition"
-                >
-                  <div>
-                    <div className="font-semibold text-slate-900">
-                      {po.poNo} · <span className="text-slate-600 font-normal">{po.supplierName}</span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 tabular-nums">
-                      PO Amount: {formatCurrency(calcPoSubtotal(po), state.currency)} · Awaiting Receiving
-                    </div>
-                  </div>
-                  <StatusBadge status={po.status} />
-                </button>
-              ))}
-          </div>
-        </div>
-
-        {/* Low Stock & Recent Audit Activity */}
-        <div className="space-y-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600" />
-                Inventory Reorder Alerts ({lowStockItems.length})
-              </h3>
-              <button
-                onClick={() => setActivePage('inventory')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-              >
-                Open Inventory →
-              </button>
-            </div>
-            {lowStockItems.length === 0 ? (
-              <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                <CheckCircle2 className="w-4 h-4" /> All stock items are above reorder thresholds.
-              </div>
-            ) : (
-              <div className="space-y-2 text-xs">
-                {lowStockItems.slice(0, 4).map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-50 border border-slate-100"
-                  >
-                    <div>
-                      <span className="font-mono text-[11px] font-semibold text-slate-500 mr-2">
-                        {item.stockCode}
-                      </span>
-                      <span className="font-medium text-slate-900">{item.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="tabular-nums font-bold text-slate-800">
-                        {formatNumber(item.stockOnHand)} / {item.reorderLevel} {item.unit}
-                      </span>
-                      <StatusBadge
-                        status={item.stockOnHand === 0 ? 'Out of Stock' : 'Low Stock'}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-slate-600" />
-                Recent Audit Trail
-              </h3>
-              <button
-                onClick={() => setActivePage('rbac')}
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-              >
-                Full Log →
-              </button>
-            </div>
-            <div className="space-y-2 text-xs">
-              {state.auditLogs.slice(0, 4).map((log) => (
-                <div key={log.id} className="flex items-start justify-between gap-3 py-1 border-b border-slate-100 last:border-0">
-                  <div>
-                    <span className="font-semibold text-slate-900">{log.action}</span>
-                    {log.documentNo && (
-                      <span className="ml-1.5 font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-                        {log.documentNo}
-                      </span>
-                    )}
-                    <p className="text-[11px] text-slate-500">{log.details}</p>
-                  </div>
-                  <div className="text-right shrink-0 text-[10px] text-slate-400">
-                    <div className="font-medium text-slate-600">{log.actor}</div>
-                    <div>{log.timestamp.slice(5, 16)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

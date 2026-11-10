@@ -2,13 +2,17 @@ import React, { useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   ClipboardPaste,
   Download,
   FileSpreadsheet,
   FileUp,
   PackagePlus,
   Printer,
+  RotateCcw,
   ShoppingBag,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react';
 import { useDemo } from '../context/DemoContext';
@@ -28,17 +32,17 @@ import { formatCurrency, formatNumber, todayIso, uid } from '../utils/formatters
 import { RbacNoticeBanner } from './RbacBadge';
 
 const MAPPING_FIELDS: Array<{ key: MappingField; label: string }> = [
-  { key: 'stockCode', label: 'Stock Code / SKU' },
-  { key: 'description', label: 'Item Description' },
-  { key: 'unit', label: 'Unit (UOM)' },
-  { key: 'unitCost', label: 'Unit Cost / Price' },
-  { key: 'quantity', label: 'Total Quantity' },
+  { key: 'stockCode', label: 'Stock Code' },
+  { key: 'description', label: 'Description' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'unitCost', label: 'Unit Cost' },
+  { key: 'quantity', label: 'Total Qty' },
   { key: 'q1Qty', label: 'Q1 Qty' },
   { key: 'q2Qty', label: 'Q2 Qty' },
   { key: 'q3Qty', label: 'Q3 Qty' },
   { key: 'q4Qty', label: 'Q4 Qty' },
   { key: 'category', label: 'Category' },
-  { key: 'mode', label: 'Procurement Mode' },
+  { key: 'mode', label: 'Mode' },
 ];
 
 export const FileUploadExtractPage: React.FC = () => {
@@ -66,6 +70,7 @@ export const FileUploadExtractPage: React.FC = () => {
 
   const [parseResult, setParseResult] = useState<RawTableParseResult | null>(null);
   const [mapping, setMapping] = useState<ColumnMapping | null>(null);
+  const [showMapper, setShowMapper] = useState(false);
   const [editableRows, setEditableRows] = useState<ExtractedRow[]>([]);
 
   const [targetDept, setTargetDept] = useState<string>(
@@ -79,6 +84,7 @@ export const FileUploadExtractPage: React.FC = () => {
     setParseResult(res);
     setMapping(res.suggestedMapping);
     setEditableRows(buildExtractedRows(res.rows, res.suggestedMapping));
+    setShowMapper(false);
     setErrorMsg(null);
     notify('success', `Extracted ${res.rows.length} rows from ${res.fileName}.`);
   };
@@ -266,35 +272,74 @@ export const FileUploadExtractPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">
-            Allowed File Upload & Client-Side Extraction Studio
-          </h2>
-          <p className="text-xs text-slate-500">
-            Upload spreadsheets, CSV/TSV tables, JSON, structured text, or tabular PDFs locally in your browser. Extract columns, verify totals, inject into PPMP/Inventory/SR/PR/PO, or print physical forms.
+          <h1 className="text-xl font-bold text-slate-900">Import & Extract File</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            3 simple steps: Upload your Excel, CSV, or PDF table → Check the extracted items → Send to a procurement document or print.
           </p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => downloadSampleTemplate('xlsx')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
           >
-            <Download className="w-3.5 h-3.5" /> Sample .xlsx
+            <Download className="w-3.5 h-3.5" /> Template (.xlsx)
           </button>
           <button
             onClick={() => downloadSampleTemplate('csv')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
           >
-            <Download className="w-3.5 h-3.5" /> Sample .csv
+            <Download className="w-3.5 h-3.5" /> Template (.csv)
           </button>
-          <button
-            onClick={() => handleParseText(SAMPLE_EXTRACTION_CSV, 'Sample_APP_CSE_Upload.csv')}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm"
-          >
-            <Sparkles className="w-3.5 h-3.5" /> Load Sample Extraction
-          </button>
+          {parseResult && (
+            <button
+              onClick={() => {
+                setParseResult(null);
+                setMapping(null);
+                setEditableRows([]);
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Upload Another File
+            </button>
+          )}
         </div>
+      </div>
+
+      {/* 3-Step Visual Indicator */}
+      <div className="grid grid-cols-3 gap-3 text-xs">
+        {[
+          { num: '1', label: 'Choose or Drop File', active: !parseResult, done: Boolean(parseResult) },
+          { num: '2', label: 'Review Extracted Items', active: Boolean(parseResult), done: false },
+          { num: '3', label: 'Create Doc or Print', active: Boolean(parseResult), done: false },
+        ].map((step) => (
+          <div
+            key={step.num}
+            className={`rounded-xl border px-3.5 py-2.5 flex items-center gap-2.5 ${
+              step.done
+                ? 'bg-emerald-50/70 border-emerald-200 text-emerald-800'
+                : step.active
+                ? 'bg-blue-50/70 border-blue-200 text-blue-900 font-semibold'
+                : 'bg-white border-slate-200 text-slate-400'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full text-[11px] font-bold inline-flex items-center justify-center shrink-0 ${
+                step.done
+                  ? 'bg-emerald-600 text-white'
+                  : step.active
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-100 text-slate-500'
+              }`}
+            >
+              {step.done ? '✓' : step.num}
+            </span>
+            <span className="truncate">{step.label}</span>
+          </div>
+        ))}
       </div>
 
       <RbacNoticeBanner
@@ -303,144 +348,147 @@ export const FileUploadExtractPage: React.FC = () => {
         actionLabel="Upload & Extract Procurement Files"
       />
 
-      {/* Upload / Paste Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
-            <button
-              onClick={() => setInputMode('file')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                inputMode === 'file' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              <FileUp className="w-3.5 h-3.5" /> File Upload
-            </button>
-            <button
-              onClick={() => setInputMode('paste')}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                inputMode === 'paste' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
-              }`}
-            >
-              <ClipboardPaste className="w-3.5 h-3.5" /> Paste Table / CSV / JSON
-            </button>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="font-semibold text-slate-500 mr-1">Allowed Extensions:</span>
-            {ALLOWED_EXTENSIONS.map((ext) => (
-              <span
-                key={ext}
-                className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-mono font-semibold"
-              >
-                {ext}
-              </span>
-            ))}
-            <span className="text-slate-400 ml-1">(Max 10 MB)</span>
-          </div>
-        </div>
-
-        {inputMode === 'file' ? (
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragActive(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) handleFileSelected(file);
-            }}
-            onClick={() => fileInputRef.current?.click()}
-            className={`cursor-pointer rounded-2xl border-2 border-dashed p-8 text-center transition ${
-              dragActive
-                ? 'border-blue-500 bg-blue-50'
-                : 'border-slate-300 bg-slate-50/70 hover:border-blue-400 hover:bg-blue-50/30'
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ALLOWED_EXTENSIONS.join(',')}
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleFileSelected(file);
-                e.target.value = '';
-              }}
-            />
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
-              <FileSpreadsheet className="w-6 h-6" />
-            </div>
-            <p className="text-sm font-bold text-slate-900">
-              {loading
-                ? 'Extracting rows & detecting columns...'
-                : 'Drop your APP-CSE / PPMP / Quote file here, or click to browse'}
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              100% client-side extraction — files never leave your browser. Disallowed formats (e.g. executables, scripts) are automatically blocked.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <textarea
-              rows={6}
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-              placeholder="Paste CSV, Tab-delimited Excel cells, or JSON array..."
-              className="w-full rounded-xl border border-slate-300 p-3 font-mono text-xs"
-            />
-            <div className="flex justify-end">
+      {/* Step 1: Upload / Paste (Shown cleanly before extraction) */}
+      {!parseResult && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex rounded-xl bg-slate-100 p-1 text-xs font-semibold">
               <button
-                onClick={() => handleParseText(pasteText, 'Pasted_Procurement_Table.txt')}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                onClick={() => setInputMode('file')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                  inputMode === 'file' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+                }`}
               >
-                <Sparkles className="w-3.5 h-3.5" /> Extract Pasted Data
+                <FileUp className="w-3.5 h-3.5" /> Upload File
+              </button>
+              <button
+                onClick={() => setInputMode('paste')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                  inputMode === 'paste' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'
+                }`}
+              >
+                <ClipboardPaste className="w-3.5 h-3.5" /> Paste Table / CSV
               </button>
             </div>
-          </div>
-        )}
 
-        {errorMsg && (
-          <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 flex items-center gap-2 text-xs text-rose-800">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
-            <span>{errorMsg}</span>
+            <button
+              onClick={() => handleParseText(SAMPLE_EXTRACTION_CSV, 'Sample_APP_CSE_Upload.csv')}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Try With Sample Data
+            </button>
           </div>
-        )}
-      </div>
 
-      {/* Extraction Result + Column Mapper + Preview */}
+          {inputMode === 'file' ? (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragActive(true);
+              }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) handleFileSelected(file);
+              }}
+              onClick={() => fileInputRef.current?.click()}
+              className={`cursor-pointer rounded-2xl border-2 border-dashed p-10 text-center transition ${
+                dragActive
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-slate-300 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-50/20'
+              }`}
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ALLOWED_EXTENSIONS.join(',')}
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleFileSelected(file);
+                  e.target.value = '';
+                }}
+              />
+              <div className="mx-auto w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
+                <FileSpreadsheet className="w-6 h-6" />
+              </div>
+              <p className="text-sm font-bold text-slate-900">
+                {loading
+                  ? 'Reading file & extracting items...'
+                  : 'Drop your spreadsheet or PDF here, or click to browse'}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Allowed: {ALLOWED_EXTENSIONS.join(', ')} (Max 10 MB) — stays 100% in your browser.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <textarea
+                rows={6}
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder="Paste CSV, Tab-delimited spreadsheet rows, or JSON array..."
+                className="w-full rounded-xl border border-slate-300 p-3 font-mono text-xs"
+              />
+              <div className="flex justify-end">
+                <button
+                  onClick={() => handleParseText(pasteText, 'Pasted_Procurement_Table.txt')}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Extract Pasted Data
+                </button>
+              </div>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 flex items-center gap-2 text-xs text-rose-800">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Steps 2 & 3: Review & Act (Shown cleanly once file is extracted) */}
       {parseResult && mapping && (
         <div className="space-y-5">
-          {/* File Metadata & Column Mapping */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          {/* Calm File Summary + Collapsible Mapper */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Extracted: {parseResult.fileName}
-                  </h3>
+                  <h2 className="text-sm font-bold text-slate-900">
+                    Loaded: {parseResult.fileName} ({includedRows.length} items selected)
+                  </h2>
                   <p className="text-xs text-slate-500">
-                    Format: {parseResult.fileType} · {(parseResult.fileSizeBytes / 1024).toFixed(1)} KB ·{' '}
-                    {parseResult.notes.join(' ')}
+                    {parseResult.fileType} · {(parseResult.fileSizeBytes / 1024).toFixed(1)} KB · Total Value:{' '}
+                    <strong className="text-blue-700">
+                      {formatCurrency(extractedGrandTotal, state.currency)}
+                    </strong>
                   </p>
                 </div>
               </div>
-              <div className="text-right text-xs tabular-nums">
-                <span className="text-slate-500">Selected Total Value: </span>
-                <strong className="text-sm text-blue-700">
-                  {formatCurrency(extractedGrandTotal, state.currency)}
-                </strong>
-              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowMapper((v) => !v)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-700"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                Column Mapping (Advanced)
+                {showMapper ? (
+                  <ChevronUp className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                )}
+              </button>
             </div>
 
-            <div>
-              <p className="text-[11px] font-bold uppercase text-slate-500 mb-2">
-                Detected Column Mapping (Adjust any field if needed)
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
+            {showMapper && (
+              <div className="pt-4 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5 text-xs">
                 {MAPPING_FIELDS.map((mf) => (
                   <div key={mf.key}>
                     <label className="block text-[11px] font-medium text-slate-600 mb-1">
@@ -461,35 +509,31 @@ export const FileUploadExtractPage: React.FC = () => {
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Editable Extracted Table */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          {/* Step 2: Clean Editable Preview Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2 text-xs">
-              <span className="font-bold text-slate-800">
-                Extracted Line Items ({includedRows.length} of {editableRows.length} selected)
-              </span>
-              <span className="text-slate-500">
-                Values below are editable before pushing into a document or printing.
-              </span>
+              <span className="font-bold text-slate-800">Step 2 · Review & Edit Extracted Rows</span>
+              <span className="text-slate-500">Uncheck rows you want to skip</span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-white border-b border-slate-200 text-[11px] text-slate-600 uppercase">
+                <thead className="bg-white border-b border-slate-200 text-[11px] text-slate-500 uppercase">
                   <tr>
-                    <th className="px-3 py-2 text-center w-10">Use</th>
-                    <th className="px-3 py-2 w-28">Stock Code</th>
-                    <th className="px-3 py-2">Description</th>
-                    <th className="px-2 py-2 w-20">Unit</th>
-                    <th className="px-2 py-2 text-right w-16">Q1</th>
-                    <th className="px-2 py-2 text-right w-16">Q2</th>
-                    <th className="px-2 py-2 text-right w-16">Q3</th>
-                    <th className="px-2 py-2 text-right w-16">Q4</th>
-                    <th className="px-2 py-2 text-right w-20">Total Qty</th>
-                    <th className="px-3 py-2 text-right w-28">Unit Cost</th>
-                    <th className="px-4 py-2 text-right w-32">Subtotal</th>
+                    <th className="px-3 py-2.5 text-center w-10">Use</th>
+                    <th className="px-3 py-2.5 w-28">Code</th>
+                    <th className="px-3 py-2.5">Description</th>
+                    <th className="px-2 py-2.5 w-20">Unit</th>
+                    <th className="px-2 py-2.5 text-right w-16">Q1</th>
+                    <th className="px-2 py-2.5 text-right w-16">Q2</th>
+                    <th className="px-2 py-2.5 text-right w-16">Q3</th>
+                    <th className="px-2 py-2.5 text-right w-16">Q4</th>
+                    <th className="px-2 py-2.5 text-right w-20">Qty</th>
+                    <th className="px-3 py-2.5 text-right w-28">Unit Cost</th>
+                    <th className="px-4 py-2.5 text-right w-28">Subtotal</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 tabular-nums">
@@ -515,7 +559,7 @@ export const FileUploadExtractPage: React.FC = () => {
                               p.map((r, i) => (i === idx ? { ...r, stockCode: e.target.value } : r))
                             )
                           }
-                          className="w-full rounded border border-slate-200 px-2 py-1 font-mono text-[11px]"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1 font-mono text-[11px]"
                         />
                       </td>
                       <td className="p-1.5">
@@ -524,10 +568,12 @@ export const FileUploadExtractPage: React.FC = () => {
                           value={row.description}
                           onChange={(e) =>
                             setEditableRows((p) =>
-                              p.map((r, i) => (i === idx ? { ...r, description: e.target.value } : r))
+                              p.map((r, i) =>
+                                i === idx ? { ...r, description: e.target.value } : r
+                              )
                             )
                           }
-                          className="w-full rounded border border-slate-200 px-2 py-1"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1"
                         />
                       </td>
                       <td className="p-1.5">
@@ -539,7 +585,7 @@ export const FileUploadExtractPage: React.FC = () => {
                               p.map((r, i) => (i === idx ? { ...r, unit: e.target.value } : r))
                             )
                           }
-                          className="w-full rounded border border-slate-200 px-2 py-1 text-center"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1 text-center"
                         />
                       </td>
                       {(['q1Qty', 'q2Qty', 'q3Qty', 'q4Qty'] as const).map((qk) => (
@@ -560,7 +606,7 @@ export const FileUploadExtractPage: React.FC = () => {
                                 })
                               );
                             }}
-                            className="w-full rounded border border-slate-200 px-1.5 py-1 text-right"
+                            className="w-full rounded-lg border border-slate-200 px-1.5 py-1 text-right"
                           />
                         </td>
                       ))}
@@ -581,7 +627,7 @@ export const FileUploadExtractPage: React.FC = () => {
                               )
                             )
                           }
-                          className="w-full rounded border border-slate-200 px-2 py-1 text-right"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1 text-right"
                         />
                       </td>
                       <td className="px-4 py-2 text-right font-semibold text-slate-900">
@@ -594,17 +640,21 @@ export const FileUploadExtractPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Target Action Bar */}
-          <div className="bg-white rounded-xl border border-blue-200 p-5 shadow-sm space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          {/* Step 3: Choose What To Do With Extracted Items */}
+          <div className="bg-white rounded-2xl border border-blue-200 p-5 space-y-4 text-xs">
+            <h3 className="text-sm font-bold text-slate-900">
+              Step 3 · Where Should These {includedRows.length} Items Go?
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Target Department / Office
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Target Department
                 </label>
                 <select
                   value={targetDept}
                   onChange={(e) => setTargetDept(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
                 >
                   {state.departments.map((d) => (
                     <option key={d.id} value={d.id}>
@@ -614,63 +664,62 @@ export const FileUploadExtractPage: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Document Purpose / Plan Title
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Plan Title / Purpose
                 </label>
                 <input
                   type="text"
                   value={targetTitle}
                   onChange={(e) => setTargetTitle(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2"
                 />
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 text-xs">
-              <span className="font-bold text-slate-700 mr-1">Create Record From Extracted:</span>
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={handleInjectPpmp}
                 disabled={!can('ppmp', 'create')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold"
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" /> Save as PPMP
+                <FileSpreadsheet className="w-3.5 h-3.5" /> Create PPMP
               </button>
               <button
                 onClick={handleInjectInventory}
                 disabled={!can('inventory', 'upload')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-semibold"
               >
-                <PackagePlus className="w-3.5 h-3.5" /> Stock In to Inventory
+                <PackagePlus className="w-3.5 h-3.5" /> Add to Inventory
               </button>
               <button
                 onClick={handleInjectSr}
                 disabled={!can('sr', 'create')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white font-semibold"
               >
-                Create SR
+                Create Stock Request
               </button>
               <button
                 onClick={handleInjectPr}
                 disabled={!can('pr', 'create')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold"
               >
-                Create PR
+                Create Purchase Request
               </button>
               <button
                 onClick={handleInjectPo}
                 disabled={!can('po', 'create')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white font-semibold"
               >
                 <ShoppingBag className="w-3.5 h-3.5" /> Create PO
               </button>
 
               <div className="ml-auto flex flex-wrap items-center gap-1.5">
-                <span className="text-slate-500 font-semibold mr-1">Or Print Immediately:</span>
+                <span className="text-slate-400 font-medium mr-1">Or Print Form:</span>
                 {(['PPMP', 'SR', 'PR', 'PO'] as PrintableFormType[]).map((ft) => (
                   <button
                     key={ft}
                     onClick={() => handlePrintExtractedForm(ft)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 font-semibold text-slate-700"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700"
                   >
                     <Printer className="w-3 h-3" /> {ft}
                   </button>

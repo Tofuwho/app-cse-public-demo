@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  Eye,
   FileUp,
   PackageCheck,
   Plus,
@@ -10,6 +11,7 @@ import {
 import { calcPoSubtotal, useDemo } from '../context/DemoContext';
 import { ProcurementMode } from '../types/procurement';
 import { amountToWords, formatCurrency, formatNumber } from '../utils/formatters';
+import { Modal } from './Modal';
 import { RbacNoticeBanner, StatusBadge } from './RbacBadge';
 
 const MODES: ProcurementMode[] = [
@@ -34,7 +36,9 @@ export const PurchaseOrderPage: React.FC = () => {
     notify,
   } = useDemo();
 
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedPoId, setSelectedPoId] = useState<string | null>(null);
+
   const [deptId, setDeptId] = useState(state.departments[0]?.id || 'ADMIN');
   const [supplierId, setSupplierId] = useState(state.suppliers[0]?.id || '');
   const [prRef, setPrRef] = useState('PR-DIRECT-001');
@@ -53,6 +57,10 @@ export const PurchaseOrderPage: React.FC = () => {
 
   const fy = state.activeFiscalYear;
   const pos = state.pos.filter((p) => p.fiscalYear === fy);
+  const selectedPo = useMemo(
+    () => state.pos.find((p) => p.id === selectedPoId),
+    [state.pos, selectedPoId]
+  );
 
   const handlePickCatalog = (idx: number, code: string) => {
     const inv = state.inventory.find((i) => i.stockCode === code);
@@ -90,32 +98,36 @@ export const PurchaseOrderPage: React.FC = () => {
       taxInclusive: true,
       items,
     });
-    if (created) setShowCreate(false);
+    if (created) setShowCreateModal(false);
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-900">Purchase Orders (PO — FY {fy})</h2>
-          <p className="text-xs text-slate-500">
-            Issue supplier Purchase Orders, compute VAT & withholding payables, receive deliveries directly into Inventory, and print official physical POs.
+          <h1 className="text-xl font-bold text-slate-900">
+            Step 4 · Purchase Orders (PO — FY {fy})
+          </h1>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Send approved orders to suppliers. When items arrive at the warehouse, click "Receive Delivery" to add them into Inventory.
           </p>
         </div>
+
         <div className="flex items-center gap-2">
           {can('po', 'create') && (
             <button
-              onClick={() => setShowCreate((v) => !v)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
+              onClick={() => setShowCreateModal(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
             >
               <Plus className="w-4 h-4" /> New Purchase Order
             </button>
           )}
           <button
             onClick={() => setActivePage('upload')}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
           >
-            <FileUp className="w-4 h-4" /> Import File
+            <FileUp className="w-4 h-4 text-slate-500" /> Import File
           </button>
         </div>
       </div>
@@ -126,19 +138,218 @@ export const PurchaseOrderPage: React.FC = () => {
         actionLabel="Receive PO Deliveries into Warehouse Inventory"
       />
 
-      {showCreate && (
-        <form
-          onSubmit={handleCreate}
-          className="bg-white rounded-xl border border-blue-200 p-5 shadow-sm space-y-4 text-xs"
-        >
-          <h3 className="text-sm font-bold text-slate-900">Create Direct Purchase Order</h3>
+      {/* Clean Master Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 uppercase">
+              <tr>
+                <th className="px-5 py-3.5 font-semibold">PO No.</th>
+                <th className="px-4 py-3.5 font-semibold">Supplier</th>
+                <th className="px-4 py-3.5 font-semibold">Department</th>
+                <th className="px-3 py-3.5 font-semibold text-right">PO Gross Amount</th>
+                <th className="px-4 py-3.5 font-semibold text-center">Status</th>
+                <th className="px-5 py-3.5 font-semibold text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 tabular-nums">
+              {pos.map((po) => {
+                const dept = state.departments.find((d) => d.id === po.departmentId);
+                const gross = calcPoSubtotal(po);
+                return (
+                  <tr
+                    key={po.id}
+                    onClick={() => setSelectedPoId(po.id)}
+                    className="hover:bg-slate-50/80 cursor-pointer transition"
+                  >
+                    <td className="px-5 py-3.5 font-mono font-bold text-blue-700">
+                      <div>{po.poNo}</div>
+                      <div className="text-[10px] text-slate-400 font-normal">Ref: {po.prNo}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="font-semibold text-slate-900">{po.supplierName}</div>
+                      <div className="text-[11px] text-slate-400">{po.modeOfProcurement}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="font-medium text-slate-800">{dept?.name}</div>
+                      <div className="text-[11px] text-slate-400">Issued {po.dateIssued}</div>
+                    </td>
+                    <td className="px-3 py-3.5 text-right">
+                      <div className="font-bold text-slate-900">
+                        {formatCurrency(gross, state.currency)}
+                      </div>
+                      <div className="text-[10.5px] text-slate-400">{po.items.length} item(s)</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-center">
+                      <StatusBadge status={po.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          onClick={() => setSelectedPoId(po.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 font-semibold text-slate-700"
+                        >
+                          <Eye className="w-3.5 h-3.5" /> View
+                        </button>
+                        <button
+                          onClick={() => openPrintModal(buildPoPrintDraft(po))}
+                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600"
+                          title="Print Official PO"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {pos.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
+                    No purchase orders for FY {fy}.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* View PO Detail Modal */}
+      <Modal
+        open={Boolean(selectedPo)}
+        onClose={() => setSelectedPoId(null)}
+        title={selectedPo ? `${selectedPo.poNo} — ${selectedPo.supplierName}` : ''}
+        subtitle={
+          selectedPo
+            ? `${selectedPo.modeOfProcurement} · Ref ${selectedPo.prNo} · Delivery: ${selectedPo.deliveryTerm}`
+            : ''
+        }
+        maxWidthClass="max-w-3xl"
+      >
+        {selectedPo &&
+          (() => {
+            const gross = calcPoSubtotal(selectedPo);
+            const vatable =
+              selectedPo.taxRate > 0 ? gross / (1 + selectedPo.taxRate / 100) : gross;
+            const wht = vatable * (selectedPo.withholdingRate / 100);
+            const netPayable = gross - wht;
+
+            return (
+              <div className="space-y-5 text-xs">
+                <div className="rounded-xl bg-slate-50 border border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={selectedPo.status} />
+                      {selectedPo.receivedDate && (
+                        <span className="text-slate-500">
+                          Received {selectedPo.receivedDate} by {selectedPo.receivedBy}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 italic">
+                      {amountToWords(gross, state.currency)}
+                    </div>
+                  </div>
+                  <div className="text-right tabular-nums">
+                    <div className="text-sm font-bold text-slate-900">
+                      Gross: {formatCurrency(gross, state.currency)}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Net Check (after {selectedPo.withholdingRate}% EWT):{' '}
+                      <strong className="text-blue-700">
+                        {formatCurrency(netPayable, state.currency)}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500 uppercase">
+                      <tr>
+                        <th className="px-4 py-2.5">Code</th>
+                        <th className="px-4 py-2.5">Item Description</th>
+                        <th className="px-3 py-2.5 text-center">Unit</th>
+                        <th className="px-3 py-2.5 text-right">Qty</th>
+                        <th className="px-3 py-2.5 text-right">Unit Cost</th>
+                        <th className="px-4 py-2.5 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 tabular-nums">
+                      {selectedPo.items.map((it) => (
+                        <tr key={it.id}>
+                          <td className="px-4 py-2.5 font-mono text-[11px] text-slate-600">
+                            {it.stockCode}
+                          </td>
+                          <td className="px-4 py-2.5 font-medium text-slate-900">
+                            {it.description}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">{it.unit}</td>
+                          <td className="px-3 py-2.5 text-right font-semibold">
+                            {formatNumber(it.quantity)}
+                          </td>
+                          <td className="px-3 py-2.5 text-right">
+                            {formatCurrency(it.unitCost, state.currency)}
+                          </td>
+                          <td className="px-4 py-2.5 text-right font-semibold">
+                            {formatCurrency(it.quantity * it.unitCost, state.currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    onClick={() => openPrintModal(buildPoPrintDraft(selectedPo))}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-semibold text-slate-700"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print Official PO
+                  </button>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedPo.status === 'Draft' && can('po', 'issue') && (
+                      <button
+                        onClick={() => issuePo(selectedPo.id)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                      >
+                        <Send className="w-3.5 h-3.5" /> Issue PO to Supplier
+                      </button>
+                    )}
+
+                    {selectedPo.status === 'Approved & Issued' && can('po', 'receive') && (
+                      <button
+                        onClick={() => receivePoDelivery(selectedPo.id)}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                      >
+                        <PackageCheck className="w-3.5 h-3.5" /> Receive Delivery (Stock In)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+      </Modal>
+
+      {/* Create Direct PO Modal */}
+      <Modal
+        open={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        title="New Direct Purchase Order"
+        subtitle="Create a PO directly for a supplier or reference an existing PR."
+        maxWidthClass="max-w-3xl"
+      >
+        <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Supplier</label>
+              <label className="block font-semibold text-slate-700 mb-1">Supplier</label>
               <select
                 value={supplierId}
                 onChange={(e) => setSupplierId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
               >
                 {state.suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -148,11 +359,11 @@ export const PurchaseOrderPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Chargeable Department</label>
+              <label className="block font-semibold text-slate-700 mb-1">Department</label>
               <select
                 value={deptId}
                 onChange={(e) => setDeptId(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
               >
                 {state.departments.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -162,11 +373,11 @@ export const PurchaseOrderPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Procurement Mode</label>
+              <label className="block font-semibold text-slate-700 mb-1">Mode</label>
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as ProcurementMode)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
               >
                 {MODES.map((m) => (
                   <option key={m} value={m}>
@@ -176,44 +387,44 @@ export const PurchaseOrderPage: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Reference PR No.</label>
+              <label className="block font-semibold text-slate-700 mb-1">Reference PR No.</label>
               <input
                 type="text"
                 value={prRef}
                 onChange={(e) => setPrRef(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Delivery Term</label>
+              <label className="block font-semibold text-slate-700 mb-1">Delivery Term</label>
               <input
                 type="text"
                 value={deliveryTerm}
                 onChange={(e) => setDeliveryTerm(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
               />
             </div>
             <div>
-              <label className="block font-semibold text-slate-600 mb-1">Payment Term</label>
+              <label className="block font-semibold text-slate-700 mb-1">Payment Term</label>
               <input
                 type="text"
                 value={paymentTerm}
                 onChange={(e) => setPaymentTerm(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2"
               />
             </div>
           </div>
 
-          <div className="border border-slate-200 rounded-lg overflow-x-auto">
+          <div className="border border-slate-200 rounded-xl overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-600">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[11px] uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-2">Catalog Item / Description</th>
-                  <th className="px-2 py-2 w-24">Unit</th>
-                  <th className="px-2 py-2 w-24 text-right">Qty</th>
-                  <th className="px-2 py-2 w-28 text-right">Unit Cost</th>
-                  <th className="px-3 py-2 w-32 text-right">Amount</th>
-                  <th className="px-2 py-2 w-10"></th>
+                  <th className="px-2 py-2 w-20">Unit</th>
+                  <th className="px-2 py-2 w-20 text-right">Qty</th>
+                  <th className="px-2 py-2 w-24 text-right">Unit Cost</th>
+                  <th className="px-3 py-2 w-28 text-right">Subtotal</th>
+                  <th className="px-2 py-2 w-9"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 tabular-nums">
@@ -284,7 +495,9 @@ export const PurchaseOrderPage: React.FC = () => {
                         onChange={(e) =>
                           setItems((p) =>
                             p.map((r, i) =>
-                              i === idx ? { ...r, unitCost: Math.max(0, Number(e.target.value) || 0) } : r
+                              i === idx
+                                ? { ...r, unitCost: Math.max(0, Number(e.target.value) || 0) }
+                                : r
                             )
                           )
                         }
@@ -309,7 +522,7 @@ export const PurchaseOrderPage: React.FC = () => {
             </table>
           </div>
 
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center pt-2">
             <button
               type="button"
               onClick={() => {
@@ -325,146 +538,28 @@ export const PurchaseOrderPage: React.FC = () => {
                   },
                 ]);
               }}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-300 font-semibold text-slate-700"
+              className="inline-flex items-center gap-1 px-3 py-2 rounded-xl border border-slate-300 font-semibold text-slate-700"
             >
               <Plus className="w-3.5 h-3.5" /> Add Item
             </button>
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setShowCreate(false)}
-                className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600"
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 font-semibold"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
               >
                 Create Draft PO
               </button>
             </div>
           </div>
         </form>
-      )}
-
-      {/* PO Cards */}
-      <div className="space-y-4">
-        {pos.map((po) => {
-          const dept = state.departments.find((d) => d.id === po.departmentId);
-          const gross = calcPoSubtotal(po);
-          const vatable = po.taxRate > 0 ? gross / (1 + po.taxRate / 100) : gross;
-          const wht = vatable * (po.withholdingRate / 100);
-          const netPayable = gross - wht;
-
-          return (
-            <div
-              key={po.id}
-              className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
-            >
-              <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
-                      {po.poNo}
-                    </span>
-                    <h3 className="text-sm font-bold text-slate-900">{po.supplierName}</h3>
-                    <StatusBadge status={po.status} />
-                    <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
-                      Ref: {po.prNo}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {dept?.name} · {po.modeOfProcurement} · Issued {po.dateIssued}
-                    {po.receivedDate ? ` · Received ${po.receivedDate} by ${po.receivedBy}` : ''}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-right mr-2 tabular-nums">
-                    <div className="text-sm font-bold text-slate-900">
-                      {formatCurrency(gross, state.currency)}
-                    </div>
-                    <div className="text-[10.5px] text-slate-500">
-                      Net Payable (after {po.withholdingRate}% EWT):{' '}
-                      <strong>{formatCurrency(netPayable, state.currency)}</strong>
-                    </div>
-                  </div>
-
-                  {po.status === 'Draft' && can('po', 'issue') && (
-                    <button
-                      onClick={() => issuePo(po.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
-                    >
-                      <Send className="w-3.5 h-3.5" /> Issue to Supplier
-                    </button>
-                  )}
-
-                  {po.status === 'Approved & Issued' && can('po', 'receive') && (
-                    <button
-                      onClick={() => receivePoDelivery(po.id)}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold"
-                    >
-                      <PackageCheck className="w-3.5 h-3.5" /> Receive Delivery (Stock In)
-                    </button>
-                  )}
-
-                  <button
-                    onClick={() => openPrintModal(buildPoPrintDraft(po))}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700"
-                  >
-                    <Printer className="w-3.5 h-3.5" /> Print Official PO
-                  </button>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-white border-b border-slate-100 text-[11px] text-slate-500 uppercase">
-                    <tr>
-                      <th className="px-4 py-2">Stock Code</th>
-                      <th className="px-4 py-2">Description</th>
-                      <th className="px-3 py-2 text-center">Unit</th>
-                      <th className="px-3 py-2 text-right">Qty</th>
-                      <th className="px-3 py-2 text-right">Unit Cost</th>
-                      <th className="px-4 py-2 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 tabular-nums">
-                    {po.items.map((it) => (
-                      <tr key={it.id}>
-                        <td className="px-4 py-2 font-mono text-[11px] text-slate-600">
-                          {it.stockCode}
-                        </td>
-                        <td className="px-4 py-2 font-medium text-slate-900">{it.description}</td>
-                        <td className="px-3 py-2 text-center">{it.unit}</td>
-                        <td className="px-3 py-2 text-right font-semibold">
-                          {formatNumber(it.quantity)}
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {formatCurrency(it.unitCost, state.currency)}
-                        </td>
-                        <td className="px-4 py-2 text-right font-semibold">
-                          {formatCurrency(it.quantity * it.unitCost, state.currency)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 text-[11px] text-slate-600 flex flex-wrap justify-between gap-2">
-                <span>
-                  Amount in Words: <strong className="italic">{amountToWords(gross, state.currency)}</strong>
-                </span>
-                <span>
-                  Delivery: {po.deliveryTerm} · Payment: {po.paymentTerm}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      </Modal>
     </div>
   );
 };
